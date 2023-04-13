@@ -8,9 +8,20 @@
 
 .endmacro
 
-.macro PPU_SETDATA val
+.macro PUSH_REGS
+    pha             ; push A to the stack
+    txa
+    pha             ; push X to stack
+    tya
+    pha             ; push Y to stack
+    php             ; Push processor status glags to stack
+.endmacro
 
-    lda val
-    sta PPU_DATA
-
+.macro PULL_REGS
+    plp                 ; restore status flag from stack
+    pla                 ; retore Y from stack
+    tay
+    pla                 ; restore X from stack
+    tax
+    pla                 ; restore A from the stack
 .endmacro

@@ -5,8 +5,8 @@
     txs                 ; init stack pointer to end of stack (stack pointer holds low byte of stack pointer $01FF)
 
     inx                 ; rollover from FF to 00
-    stx PPU_CTRL1       ; disable NMI
-    stx PPU_CTRL2       ; disable rendering
+    stx PPU_CTRL       ; disable NMI
+    stx PPU_MASK       ; disable rendering
     stx APU_MODCTRL     ; disable DMC IRQ
 
     lda #$40
@@ -20,7 +20,11 @@ Wait1stVBlank:          ; wait for first VBLank
 ClearRAM:
     sta $0000,x         ; clear 0000-00FF
     sta $0100,x         ; clear 0100-01FF
-    sta $0200,x         ; clear 0200-02FF
+
+    lda #$FF                 ; We cannot load $0200-$02FF (OAM) with zero
+    sta $0200,x              ; So we load it with $FF (all sprites off-screen)
+
+    lda #0                   ; And we proceed to zero the next ranges
     sta $0300,x         ; clear 0300-03FF
     sta $0400,x         ; clear 0400-04FF
     sta $0500,x         ; clear 0500-05FF
