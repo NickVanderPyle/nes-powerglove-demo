@@ -3,13 +3,17 @@
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
-	"extensions": [
-		"tlgkccampbell.code-ca65",
-		"ms-azuretools.vscode-docker", //for the dockerfile.
-		"vscode.makefile-tools", // makefile highligts
-		"eamodio.gitlens",
-		"ms-vscode.hexeditor"
-	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"tlgkccampbell.code-ca65",
+				"ms-azuretools.vscode-docker", //for the dockerfile.
+				"vscode.makefile-tools", // makefile highligts
+				"eamodio.gitlens",
+				"ms-vscode.hexeditor"
+			]		
+		}
+	},
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "uname -a",
 	"remoteUser": "vscode",
