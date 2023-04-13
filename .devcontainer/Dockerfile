@@ -17,7 +17,8 @@ RUN apt-get update && \
         git \
         unzip \
         build-essential \
-        cc65
+        cc65 \
+        python3
 
 RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME && \
     chmod 0440 /etc/sudoers.d/$USERNAME
