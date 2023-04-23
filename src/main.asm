@@ -158,10 +158,6 @@ EnableRendering:
 LoopForever:
     inc Counter
     
-    lda Counter
-    sta UpdateHexToTiles_param_value
-    jsr UpdateHexToTiles
-    
     WaitForVBlank:
         lda IsDrawComplete
         beq WaitForVBlank
@@ -177,22 +173,6 @@ NMI:
     lda #0
     sta PPU_CTRL                ; Disable NMI
 
-    ; draw hex values to xCol=10, yCol=10
-    lda #15
-    sta SetBGColToTileIndex_param_xCol
-    lda #15
-    sta SetBGColToTileIndex_param_yCol
-    lda UpdateHexToTiles_return_digit1
-    sta SetBGColToTileIndex_param_value
-    jsr SetBGColToTileIndex
-
-    lda #16
-    sta SetBGColToTileIndex_param_xCol
-    lda #15
-    sta SetBGColToTileIndex_param_yCol
-    lda UpdateHexToTiles_return_digit2
-    sta SetBGColToTileIndex_param_value
-    jsr SetBGColToTileIndex
 
     ; reset scroll because changing PPU_ADDR will also change the scroll: https://www.nesdev.org/wiki/PPU_scrolling#Frequent_pitfalls
     lda #0
