@@ -16,6 +16,17 @@ SetBGColToTileIndex_param_value:    .res 1
 SetBGColToTileIndex_tile_addr:      .res 2
 WriteAToJoy1_temp:                  .res 1
 
+PowerGloveStatus:                   .res 1      ; $5F when Power Glove ready to send more bytes.
+PowerGloveData:                     .res 7      ; 1st byte: Signed X-Coordinate
+                                                ; 2nd byte: Signed Y-Coordinate
+                                                ; 3rd byte: Signed Z-Coordinate
+                                                ; 4th byte: Wrist Rotation Angle (around Z-axis)
+                                                ; 5th byte: Finger Flex Sensors
+                                                ; 6th byte: Control Pad Buttons
+                                                ; NA  These two unused because...
+                                                ; NA  init bytes end in $3F, $01
+                                                ; 7th byte: Error Flags
+
 .segment "RODATA"
 PowerGloveAnalogMode7Bytes:
     .byte $06, $C1, $08, $00, $02, $3F, $01
@@ -53,6 +64,19 @@ PowerGloveAnalogMode7Bytes:
     php                     ; 3cy push processor status to stack
     lda #0                  ; 2cy
     Loop256Times:           ; 1024cy
+        sbc #1
+        bne Loop256Times
+    plp                     ; 4cy restore status flag from stack
+    pla                     ; 4cy retore A from stack
+    rts                     ; 6cy
+.endproc
+
+.proc Wait100Cycles
+    ; jsr here is 6cy
+    pha                     ; 3cy push A to the stack
+    php                     ; 3cy push processor status to stack
+    lda #18                  ; 2cy
+    Loop256Times:           ; 72cy
         sbc #1
         bne Loop256Times
     plp                     ; 4cy restore status flag from stack
@@ -111,6 +135,59 @@ PowerGloveAnalogMode7Bytes:
             bne Loop7Bytes
         rts
 .endproc
+
+; https://problemkaputt.de/everynes.htm#controllerspowerglovetransmissionprotocolrxtx
+; To read data, first read a status byte.
+; Saves to PowerGloveStatus
+; Clobbers A, X
+.proc ReadPowerGloveStatus
+    lda #%00000001
+    sta APU_PAD1
+    lda #%00000000 
+    sta APU_PAD1
+
+    ldx #$08
+    ForX8To0:
+        lda APU_PAD1            ; Read 0th bit in from Power Glove.
+        lsr                     ; Shift-right 0th bit onto Carry.
+        rol PowerGloveStatus    ; Rotate-left the 0th bit from carry.
+        dex
+        bne ForX8To0
+    rts
+.endproc
+
+.proc ReadPowerGloveData
+    lda #%00000001
+    sta APU_PAD1
+    lda #%00000000 
+    sta APU_PAD1
+
+    jsr Wait100Cycles
+
+    ldx #0
+    ForX0To7:
+        lda #0
+        sta PowerGloveData,x
+
+        ldy #$08
+        ForY8To0:
+            lda APU_PAD1            ; Read 0th bit in from Power Glove.
+            lsr                     ; Shift-right 0th bit onto Carry.
+            rol PowerGloveData,x    ; Rotate-left the 0th bit from carry.
+            dey
+            bne ForY8To0
+
+        lda PowerGloveData,x
+        eor #$FF                    ; Undo inversion.
+        sta PowerGloveData,x
+
+        inx
+        cpx #7
+        bne ForX0To7
+    
+    rts
+.endproc
+
 ; Param: UpdateHexToTiles_param_value is number to be converted to hex tiles.
 ; Hex tile indexes placed in UpdateHexToTiles_return_digit1 and UpdateHexToTiles_return_digit2
 .proc UpdateHexToTiles
@@ -259,6 +336,13 @@ LoopForever:
         beq WaitForVBlank
     lda #0
     sta IsDrawComplete
+
+    jsr ReadPowerGloveStatus
+    lda PowerGloveStatus
+    cmp #$5F
+    bne SkipPowerGloveUpdate
+        jsr ReadPowerGloveData
+    SkipPowerGloveUpdate:
 
     jmp LoopForever
 
