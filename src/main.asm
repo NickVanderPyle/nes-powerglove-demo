@@ -353,6 +353,71 @@ NMI:
     lda #0
     sta PPU_CTRL                ; Disable NMI
 
+    X_value:
+        lda PowerGloveData
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+
+        ; draw hex values to xCol=10, yCol=10
+        lda #5
+        sta SetBGColToTileIndex_param_xCol
+        lda #10
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit1
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
+
+        lda #6
+        sta SetBGColToTileIndex_param_xCol
+        lda #10
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit2
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
+
+    Y_value:
+        lda PowerGloveData+1
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+
+        ; draw hex values to xCol=10, yCol=10
+        lda #5
+        sta SetBGColToTileIndex_param_xCol
+        lda #11
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit1
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
+
+        lda #6
+        sta SetBGColToTileIndex_param_xCol
+        lda #11
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit2
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
+
+    Z_value:
+        lda PowerGloveData+2
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+
+        ; draw hex values to xCol=10, yCol=10
+        lda #5
+        sta SetBGColToTileIndex_param_xCol
+        lda #12
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit1
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
+
+        lda #6
+        sta SetBGColToTileIndex_param_xCol
+        lda #12
+        sta SetBGColToTileIndex_param_yCol
+        lda UpdateHexToTiles_return_digit2
+        sta SetBGColToTileIndex_param_value
+        jsr SetBGColToTileIndex
 
     ; reset scroll because changing PPU_ADDR will also change the scroll: https://www.nesdev.org/wiki/PPU_scrolling#Frequent_pitfalls
     lda #0
