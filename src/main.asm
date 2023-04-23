@@ -14,9 +14,103 @@ SetBGColToTileIndex_param_xCol:     .res 1
 SetBGColToTileIndex_param_yCol:     .res 1
 SetBGColToTileIndex_param_value:    .res 1
 SetBGColToTileIndex_tile_addr:      .res 2
+WriteAToJoy1_temp:                  .res 1
+
+.segment "RODATA"
+PowerGloveAnalogMode7Bytes:
+    .byte $06, $C1, $08, $00, $02, $3F, $01
+    ;     │    │    │         │    │ 
+    ;     │    │    │         │    └─────── $3F $01  Mask Word $01FF (bit0-8: request 1st..7th response byte)
+    ;     │    │    │         └──────────── $02      Two 8bit "opcodes" (in Analog mode, they are "masks", not "opcodes")
+    ;     │    │    │
+    ;     │    │    └────────────────────── $08 $00  Opcode $0800 (maybe analog request, or maybe just a dummy-opcode)
+    ;     │    └─────────────────────────── $C1      Analog Mode (bit7), one 16bit opcode (bit3-0)
+    ;     └──────────────────────────────── $06      Length, total number of following bytes
+    ; https://problemkaputt.de/everynes.htm#controllerspowerglovetxpacketsconfigurationopcodes
 
 .segment "CODE"
 
+.proc Wait3100Cycles
+    ; jsr here is 6cy
+    pha                     ; 3cy push A to the stack
+    php                     ; 3cy push processor status to stack
+    lda #0                  ; 2cy
+    Loop256Times:           ; Loop waits 3072 cpu cycles
+        nop
+        nop
+        nop
+        nop
+        sbc #1
+        bne Loop256Times
+    plp                     ; 4cy restore status flag from stack
+    pla                     ; 4cy retore A from stack
+    rts                     ; 6cy
+.endproc
+
+.proc Wait1052Cycles
+    ; jsr here is 6cy
+    pha                     ; 3cy push A to the stack
+    php                     ; 3cy push processor status to stack
+    lda #0                  ; 2cy
+    Loop256Times:           ; 1024cy
+        sbc #1
+        bne Loop256Times
+    plp                     ; 4cy restore status flag from stack
+    pla                     ; 4cy retore A from stack
+    rts                     ; 6cy
+.endproc
+
+; Clobbers A, X
+.proc WriteAToJoy1
+    sta WriteAToJoy1_temp
+    
+    txa
+    pha
+    php
+
+    ldx #$08
+    ForX8To0:
+        lda #%00000000              ; Clear A to all zero bits
+        asl WriteAToJoy1_temp       ; Shift MSB into Carry
+        rol                         ; Rotate the Carry into A's 0th bit
+        sta APU_PAD1                ; Write 0th bit to APU_PAD1
+        lda APU_PAD1                ; Dummy read, sends a clock pulse to Power Glove
+        dex
+        bne ForX8To0                ; if X != 0 goto ForX0To8
+    
+    plp
+    pla
+    tax
+
+    rts
+.endproc
+
+; https://problemkaputt.de/everynes.htm#controllerspowerglove
+; Write %00000001 to $4016 then wait 3330cycles.
+; Write each byte's bit, one at a time, MSB first, %0000000B to $4016.
+; Every other byte, wait 1280cycles.
+; Clobbers A, X
+.proc InitPowerGlove
+        ldx #%00000001
+        stx APU_PAD1
+        jsr Wait3100Cycles
+
+        ldx #0
+        Loop7Bytes:
+            lda PowerGloveAnalogMode7Bytes,x
+            jsr WriteAToJoy1
+            inx
+
+            txa                     ; https://problemkaputt.de/everynes.htm#controllerspowerglove
+            and #%00000001          ; Suggests to have a delay after every other byte.
+            beq SkipIfXIsEven
+                jsr Wait1052Cycles
+            SkipIfXIsEven:
+
+            cpx #7
+            bne Loop7Bytes
+        rts
+.endproc
 ; Param: UpdateHexToTiles_param_value is number to be converted to hex tiles.
 ; Hex tile indexes placed in UpdateHexToTiles_return_digit1 and UpdateHexToTiles_return_digit2
 .proc UpdateHexToTiles
@@ -122,6 +216,8 @@ SetBGColToTileIndex_tile_addr:      .res 2
 
 RESET:
     INIT_NES            ; From reset.inc
+    
+    jsr InitPowerGlove
 
 Main:
     jsr LoadPalette
