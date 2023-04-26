@@ -1,3 +1,4 @@
+.include "powerglove-structs.inc"
 .include "consts.inc"
 .include "header.inc"
 .include "reset.inc"
@@ -10,28 +11,24 @@ Counter:                            .res 1      ; Frame counter
 UpdateHexToTiles_param_value:       .res 1      ; param to convert to hex tiles.
 UpdateHexToTiles_return_digit1:     .res 1      ; return hi-nibble tile number.
 UpdateHexToTiles_return_digit2:     .res 1      ; return lo-nibble tile number.
-SetBGColToTileIndex_param_xCol:     .res 1
-SetBGColToTileIndex_param_yCol:     .res 1
-SetBGColToTileIndex_param_value:    .res 1
-SetBGColToTileIndex_tile_addr:      .res 2
+
+PowerGloveHexZLoByte:               .res 1
+PowerGloveHexZHiByte:               .res 1
+PowerGloveHexYLoByte:               .res 1
+PowerGloveHexYHiByte:               .res 1
+PowerGloveHexXLoByte:               .res 1
+PowerGloveHexXHiByte:               .res 1
+
 WriteAToJoy1_temp:                  .res 1
 
 PowerGloveStatus:                   .res 1      ; $5F when Power Glove ready to send more bytes.
-PowerGloveData:                     .res 7      ; 1st byte: Signed X-Coordinate
-                                                ; 2nd byte: Signed Y-Coordinate
-                                                ; 3rd byte: Signed Z-Coordinate
-                                                ; 4th byte: Wrist Rotation Angle (around Z-axis)
-                                                ; 5th byte: Finger Flex Sensors
-                                                ; 6th byte: Control Pad Buttons
-                                                ; NA  These two unused because...
-                                                ; NA  init bytes end in $3F, $01
-                                                ; 7th byte: Error Flags
+PowerGloveData:                     .res .sizeof(PowerGloveTelemetry)
 
 .segment "RODATA"
 PowerGloveAnalogMode7Bytes:
-    .byte $06, $C1, $08, $00, $02, $3F, $01
+    .byte $06, $C1, $08, $00, $02, $FF, $01
     ;     │    │    │         │    │ 
-    ;     │    │    │         │    └─────── $3F $01  Mask Word $01FF (bit0-8: request 1st..7th response byte)
+    ;     │    │    │         │    └─────── $FF $01  $01FF for 9byte and $013F for 7byte response.
     ;     │    │    │         └──────────── $02      Two 8bit "opcodes" (in Analog mode, they are "masks", not "opcodes")
     ;     │    │    │
     ;     │    │    └────────────────────── $08 $00  Opcode $0800 (maybe analog request, or maybe just a dummy-opcode)
@@ -41,7 +38,7 @@ PowerGloveAnalogMode7Bytes:
 
 .segment "CODE"
 
-.proc Wait3100Cycles
+.proc WaitBeforePowerGloveInitTX
     ; jsr here is 6cy
     pha                     ; 3cy push A to the stack
     php                     ; 3cy push processor status to stack
@@ -53,12 +50,16 @@ PowerGloveAnalogMode7Bytes:
         nop
         sbc #1
         bne Loop256Times
+    lda #64                 ; 2cy
+    Loop64Times:            ; 256cy
+        sbc #1
+        bne Loop64Times
     plp                     ; 4cy restore status flag from stack
     pla                     ; 4cy retore A from stack
     rts                     ; 6cy
 .endproc
 
-.proc Wait1052Cycles
+.proc WaitAfterPowerGloveTX
     ; jsr here is 6cy
     pha                     ; 3cy push A to the stack
     php                     ; 3cy push processor status to stack
@@ -66,19 +67,23 @@ PowerGloveAnalogMode7Bytes:
     Loop256Times:           ; 1024cy
         sbc #1
         bne Loop256Times
+    lda #64                 ; 2cy
+    Loop64Times:            ; 256cy
+        sbc #1
+        bne Loop64Times
     plp                     ; 4cy restore status flag from stack
     pla                     ; 4cy retore A from stack
     rts                     ; 6cy
 .endproc
 
-.proc Wait100Cycles
+.proc WaitAfterPowerGloveRX
     ; jsr here is 6cy
     pha                     ; 3cy push A to the stack
     php                     ; 3cy push processor status to stack
     lda #18                  ; 2cy
-    Loop256Times:           ; 72cy
+    Loop18Times:           ; 72cy
         sbc #1
-        bne Loop256Times
+        bne Loop18Times
     plp                     ; 4cy restore status flag from stack
     pla                     ; 4cy retore A from stack
     rts                     ; 6cy
@@ -117,19 +122,17 @@ PowerGloveAnalogMode7Bytes:
 .proc InitPowerGlove
         ldx #%00000001
         stx APU_PAD1
-        jsr Wait3100Cycles
+        jsr WaitBeforePowerGloveInitTX
 
         ldx #0
+        jmp SkipFirstWait
         Loop7Bytes:
+            jsr WaitAfterPowerGloveTX
+            SkipFirstWait:
+
             lda PowerGloveAnalogMode7Bytes,x
             jsr WriteAToJoy1
             inx
-
-            txa                     ; https://problemkaputt.de/everynes.htm#controllerspowerglove
-            and #%00000001          ; Suggests to have a delay after every other byte.
-            beq SkipIfXIsEven
-                jsr Wait1052Cycles
-            SkipIfXIsEven:
 
             cpx #7
             bne Loop7Bytes
@@ -157,15 +160,15 @@ PowerGloveAnalogMode7Bytes:
 .endproc
 
 .proc ReadPowerGloveData
-    lda #%00000001
-    sta APU_PAD1
-    lda #%00000000 
-    sta APU_PAD1
-
-    jsr Wait100Cycles
-
     ldx #0
-    ForX0To7:
+    ForX0ToDataSize:
+        jsr WaitAfterPowerGloveRX
+
+        lda #%00000001
+        sta APU_PAD1
+        lda #%00000000 
+        sta APU_PAD1
+
         lda #0
         sta PowerGloveData,x
 
@@ -179,11 +182,12 @@ PowerGloveAnalogMode7Bytes:
 
         lda PowerGloveData,x
         eor #$FF                    ; Undo inversion.
+        adc #$80
         sta PowerGloveData,x
 
         inx
-        cpx #7
-        bne ForX0To7
+        cpx #POWERGLOVEDATASIZE
+        bne ForX0ToDataSize
     
     rts
 .endproc
@@ -236,56 +240,61 @@ PowerGloveAnalogMode7Bytes:
     rts
 .endproc
 
-; params:
-;   SetBGColToTileIndex_param_xCol
-;   SetBGColToTileIndex_param_yCol
-;   SetBGColToTileIndex_param_value
-; clobbers: A register
-.proc SetBGColToTileIndex
-    ; A = (yCol * 32) + xCol
-
-    lda #$20
-    sta SetBGColToTileIndex_tile_addr+1
-    lda #$00
-    sta SetBGColToTileIndex_tile_addr
-
-    ; Add 32 to the address to skip a row per yCol
-    lda SetBGColToTileIndex_param_yCol
-    Add32ColumnsPerRowLoop:
-    beq DoneMultiplyingByRow
-        lda SetBGColToTileIndex_tile_addr
-        clc
-        adc #32             ; for each row, increment 32 tiles
-        sta SetBGColToTileIndex_tile_addr
-        bcc :+
-            lda SetBGColToTileIndex_tile_addr+1
-            adc #0
-            sta SetBGColToTileIndex_tile_addr+1
-        :
-        dec SetBGColToTileIndex_param_yCol
-        jmp Add32ColumnsPerRowLoop
-    DoneMultiplyingByRow:
-
-    ; Add XCols to the tile index
-    lda SetBGColToTileIndex_tile_addr
-    clc
-    adc SetBGColToTileIndex_param_xCol
-    sta SetBGColToTileIndex_tile_addr
-    bcc :+
-        lda SetBGColToTileIndex_tile_addr+1
-        adc #0
-        sta SetBGColToTileIndex_tile_addr+1
-    :
-
-    ; Tell PPU which tile we're about to write
+.proc RenderPowerGloveData
     bit PPU_STATUS          ; read from PPU_STATUS to reset PPU_ADDR latch
-    lda SetBGColToTileIndex_tile_addr+1
-    sta PPU_ADDR
-    lda SetBGColToTileIndex_tile_addr
-    sta PPU_ADDR
 
-    ; write the updated tile value
-    lda SetBGColToTileIndex_param_value
+    ;                    Y    X
+    lda #>($2000 + (32 * 10) + 13)
+    sta PPU_ADDR
+    lda #<($2000 + (32 * 10) + 13)
+    sta PPU_ADDR
+    lda #$B8                            ; X
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda #$8D                            ; -
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda PowerGloveHexXHiByte
+    sta PPU_DATA
+    lda PowerGloveHexXLoByte
+    sta PPU_DATA
+
+    ;                    Y    X
+    lda #>($2000 + (32 * 12) + 13)
+    sta PPU_ADDR
+    lda #<($2000 + (32 * 12) + 13)
+    sta PPU_ADDR
+    lda #$B9                            ; Y
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda #$8D                            ; -
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda PowerGloveHexYHiByte
+    sta PPU_DATA
+    lda PowerGloveHexYLoByte
+    sta PPU_DATA
+
+    ;                    Y    X
+    lda #>($2000 + (32 * 14) + 13)
+    sta PPU_ADDR
+    lda #<($2000 + (32 * 14) + 13)
+    sta PPU_ADDR
+    lda #$BA                            ; Z
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda #$8D                            ; -
+    sta PPU_DATA
+    lda #$00                            ; empty
+    sta PPU_DATA
+    lda PowerGloveHexZHiByte
+    sta PPU_DATA
+    lda PowerGloveHexZLoByte
     sta PPU_DATA
 
     rts
@@ -342,6 +351,30 @@ LoopForever:
     cmp #$5F
     bne SkipPowerGloveUpdate
         jsr ReadPowerGloveData
+        
+        lda PowerGloveData+PowerGloveTelemetry::XPos
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+        lda UpdateHexToTiles_return_digit1
+        sta PowerGloveHexXHiByte
+        lda UpdateHexToTiles_return_digit2
+        sta PowerGloveHexXLoByte
+
+        lda PowerGloveData+PowerGloveTelemetry::YPos
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+        lda UpdateHexToTiles_return_digit1
+        sta PowerGloveHexYHiByte
+        lda UpdateHexToTiles_return_digit2
+        sta PowerGloveHexYLoByte
+
+        lda PowerGloveData+PowerGloveTelemetry::ZPos
+        sta UpdateHexToTiles_param_value
+        jsr UpdateHexToTiles
+        lda UpdateHexToTiles_return_digit1
+        sta PowerGloveHexZHiByte
+        lda UpdateHexToTiles_return_digit2
+        sta PowerGloveHexZLoByte
     SkipPowerGloveUpdate:
 
     jmp LoopForever
@@ -353,71 +386,7 @@ NMI:
     lda #0
     sta PPU_CTRL                ; Disable NMI
 
-    X_value:
-        lda PowerGloveData
-        sta UpdateHexToTiles_param_value
-        jsr UpdateHexToTiles
-
-        ; draw hex values to xCol=10, yCol=10
-        lda #5
-        sta SetBGColToTileIndex_param_xCol
-        lda #10
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit1
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
-
-        lda #6
-        sta SetBGColToTileIndex_param_xCol
-        lda #10
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit2
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
-
-    Y_value:
-        lda PowerGloveData+1
-        sta UpdateHexToTiles_param_value
-        jsr UpdateHexToTiles
-
-        ; draw hex values to xCol=10, yCol=10
-        lda #5
-        sta SetBGColToTileIndex_param_xCol
-        lda #11
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit1
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
-
-        lda #6
-        sta SetBGColToTileIndex_param_xCol
-        lda #11
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit2
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
-
-    Z_value:
-        lda PowerGloveData+2
-        sta UpdateHexToTiles_param_value
-        jsr UpdateHexToTiles
-
-        ; draw hex values to xCol=10, yCol=10
-        lda #5
-        sta SetBGColToTileIndex_param_xCol
-        lda #12
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit1
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
-
-        lda #6
-        sta SetBGColToTileIndex_param_xCol
-        lda #12
-        sta SetBGColToTileIndex_param_yCol
-        lda UpdateHexToTiles_return_digit2
-        sta SetBGColToTileIndex_param_value
-        jsr SetBGColToTileIndex
+    jsr RenderPowerGloveData
 
     ; reset scroll because changing PPU_ADDR will also change the scroll: https://www.nesdev.org/wiki/PPU_scrolling#Frequent_pitfalls
     lda #0
