@@ -15,7 +15,7 @@ with open(filename, 'r') as infile:
             if line.startswith("sym"):
                 parts = line.split(",")
                 sym_name = next((x.split("=")[1].strip('"').lstrip('.') for x in parts if x.startswith("name=")), None)
-                sym_addr = next((x.split("=")[1].strip('"').lstrip('0x') for x in parts if x.startswith("val=")), None)
+                sym_addr = next((x.split("=")[1].strip('"').lstrip('0x') for x in parts if x.startswith("val=")), None) or "0"
                 if not sym_name.startswith("__"):
                     address = int(sym_addr, 16)
                     nl_file.write(f"${address:04X}#{sym_name}#\n")
